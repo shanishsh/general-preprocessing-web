@@ -583,6 +583,159 @@ const ML_WORKFLOW_DATA = {
     }
   ],
 
+  // Leakage Audit Checklist (0/18 Tracker from Data Leakage in Preprocessing Guide)
+  leakageTracker: [
+    // A. Data splitting
+    {
+      category: "Data splitting",
+      id: "leak-1",
+      name: "The split strategy reflects the real deployment scenario",
+      desc: "Choose random, stratified, chronological, or group-based splits based on how live predictions will be generated."
+    },
+    {
+      category: "Data splitting",
+      id: "leak-2",
+      name: "Related entities cannot cross the split when unseen-entity generalization is required",
+      desc: "Use GroupShuffleSplit or GroupKFold so the same customer, patient, or device never crosses into both train and test."
+    },
+    {
+      category: "Data splitting",
+      id: "leak-3",
+      name: "Accidental duplicates and near-duplicates across splits have been investigated",
+      desc: "Check df.duplicated() and business key duplicates before splitting to prevent memorized test records."
+    },
+    {
+      category: "Data splitting",
+      id: "leak-4",
+      name: "Time-dependent data is split chronologically where appropriate",
+      desc: "Ensure test period occurs strictly after training period; never use random train_test_split for time-dependent forecasting."
+    },
+
+    // B. Preprocessing
+    {
+      category: "Preprocessing",
+      id: "leak-5",
+      name: "Imputers and scalers are fitted only on training data",
+      desc: "Use fit_transform() on X_train and transform() on X_test/val; never fit on full dataset before splitting."
+    },
+    {
+      category: "Preprocessing",
+      id: "leak-6",
+      name: "Encoders and feature selectors are fitted inside the training pipeline",
+      desc: "OneHotEncoder, TargetEncoder, and SelectKBest must learn mappings strictly within each training fold."
+    },
+    {
+      category: "Preprocessing",
+      id: "leak-7",
+      name: "Outlier thresholds and learned transformations do not use held-out data",
+      desc: "Percentile clipping bounds, Box-Cox lambda, and PCA components must derive exclusively from train data."
+    },
+    {
+      category: "Preprocessing",
+      id: "leak-8",
+      name: "Resampling is performed only inside the training folds",
+      desc: "SMOTE, RandomOverSampler, or undersampling must never be applied to validation or test sets (use imblearn pipeline)."
+    },
+    {
+      category: "Preprocessing",
+      id: "leak-9",
+      name: "Target encoding and rolling features have explicit leakage controls",
+      desc: "Use out-of-fold cross-fitting with smoothing for target encodings, and .shift(1) for rolling temporal features."
+    },
+
+    // C. Feature audit
+    {
+      category: "Feature audit",
+      id: "leak-10",
+      name: "Every feature is available at prediction time",
+      desc: "Verify every input column is collected and stored before the exact prediction cutoff timestamp."
+    },
+    {
+      category: "Feature audit",
+      id: "leak-11",
+      name: "No feature directly contains the target or a post-outcome result",
+      desc: "Audit columns created downstream from the event (e.g., cancellation_date, account_closed_status)."
+    },
+    {
+      category: "Feature audit",
+      id: "leak-12",
+      name: "Target-derived aggregates are calculated without using the row's own or future labels improperly",
+      desc: "Historical averages or customer statistics must exclude the current record and future events."
+    },
+    {
+      category: "Feature audit",
+      id: "leak-13",
+      name: "IDs, timestamps, labels and post-event columns have been reviewed",
+      desc: "Drop database surrogate keys, row IDs, and post-event status codes from predictor matrix X."
+    },
+
+    // D. Evaluation and testing
+    {
+      category: "Evaluation and testing",
+      id: "leak-14",
+      name: "Cross-validation includes the whole preprocessing pipeline",
+      desc: "Pass the full unified Pipeline to cross_val_score / GridSearchCV so transformers re-fit in each fold."
+    },
+    {
+      category: "Evaluation and testing",
+      id: "leak-15",
+      name: "Final test data was not used to repeatedly tune the model",
+      desc: "Keep the holdout test set frozen until the final model architecture and hyperparameters are finalized."
+    },
+    {
+      category: "Evaluation and testing",
+      id: "leak-16",
+      name: "Suspiciously high performance has been investigated",
+      desc: "Treat 99–100% accuracy or ROC-AUC as an immediate red flag for target proxies or duplicate contamination."
+    },
+    {
+      category: "Evaluation and testing",
+      id: "leak-17",
+      name: "A shuffled-target sanity test has been considered where practical",
+      desc: "Permute target labels randomly; the pipeline performance should drop to chance baseline."
+    },
+    {
+      category: "Evaluation and testing",
+      id: "leak-18",
+      name: "The model and preprocessing pipeline pass realistic inference tests",
+      desc: "Feed mock production payloads through the serialized pipeline to confirm behavior on unseen inputs."
+    }
+  ],
+
+  // Leakage Guide Reference Data
+  leakageGuide: {
+    sourcesTable: [
+      { source: "Missing-value imputation", how: "Mean or median is calculated using train, validation, and test data together", prevent: "Fit the imputer on training data only" },
+      { source: "Feature scaling", how: "Scaler learns statistics from the full dataset", prevent: "Fit the scaler on training data only" },
+      { source: "Encoding categories", how: "Encoder or category-frequency statistics are learned using held-out data", prevent: "Fit the encoder on training data; define unknown-category behavior" },
+      { source: "Target encoding", how: "Each category receives a target statistic calculated using its own or held-out labels", prevent: "Use leakage-safe cross-fitting within training data" },
+      { source: "Feature selection", how: "Correlations or feature importance are calculated using all labels before splitting", prevent: "Select features within training folds" },
+      { source: "Outlier treatment", how: "Global percentile limits are calculated using all data", prevent: "Learn thresholds on training data only" },
+      { source: "Oversampling / SMOTE", how: "Synthetic samples are created before splitting, allowing related samples into both sets", prevent: "Split first and resample only within training folds" },
+      { source: "Duplicate records", how: "Identical or nearly identical observations appear in train and test", prevent: "Deduplicate accidental records and audit the split" },
+      { source: "Time-series features", how: "Future observations influence historical features", prevent: "Use chronological splitting and past-only calculations" },
+      { source: "Grouped records", how: "Rows from the same customer, patient, or device appear in both sets despite a new-entity evaluation goal", prevent: "Use a group-based split (GroupKFold)" },
+      { source: "Target-derived features", how: "A column contains the answer or a proxy created after the outcome", prevent: "Audit the meaning and availability time of every feature" },
+      { source: "Test-guided tuning", how: "Repeated test-set evaluation influences feature or model decisions", prevent: "Reserve test evaluation for the final assessment" }
+    ],
+    warningSigns: [
+      { sign: "Test accuracy suddenly reaches 99–100%", investigate: "Target proxies, duplicate rows, or a flawed split" },
+      { sign: "Validation performance is much higher than expected", investigate: "Preprocessing contamination or feature leakage" },
+      { sign: "Cross-validation results vary greatly", investigate: "Small data, rare classes, grouped records, or unstable features" },
+      { sign: "Training performance is excellent but live performance is poor", investigate: "Overfitting, distribution shift, leakage, or inconsistent serving data" },
+      { sign: "One feature seems to solve the problem by itself", investigate: "Feature creation time, target-derived data, or an unintended identifier" },
+      { sign: "Model performance collapses on a later time period", investigate: "Future information in training features, temporal shift, or changing relationships" }
+    ],
+    targetQuestions: [
+      "What real-world event does this column represent?",
+      "When was the value created or updated?",
+      "Would this value be available at the exact moment the prediction is made?",
+      "Was it derived from the target, an outcome, or a post-event process?",
+      "Does this feature make the problem artificially easy compared with how predictions will be used?"
+    ],
+    goldenRule: "Split correctly → fit transformations on training data only → evaluate the complete pipeline on held-out data → audit every feature's availability time → reproduce inference before deployment."
+  },
+
   // Detailed Phases Data
   phases: [
     {
@@ -1972,6 +2125,69 @@ print(f"Pipeline artifact saved to {model_artifact_path}")
 loaded_pipeline = joblib.load(model_artifact_path)
 predictions = loaded_pipeline.predict(X_new)
 print(f"Generated {len(predictions)} predictions on new incoming batch.")`
+    },
+    {
+      category: "Data Preprocessing",
+      id: "recipe-group-overlap-audit",
+      title: "Group & Entity Leakage Overlap Audit",
+      desc: "Audit whether customer, patient, or device entity IDs cross between train and test partitions.",
+      code: `# Audit customer/entity group overlap across train and test sets
+train_groups = set(X_train["customer_id"])
+test_groups = set(X_test["customer_id"])
+overlap = train_groups & test_groups
+
+print(f"Unique train groups: {len(train_groups)}")
+print(f"Unique test groups:  {len(test_groups)}")
+print(f"Overlapping entities: {len(overlap)}")
+
+if len(overlap) > 0:
+    print("WARNING: Entity leakage detected across split boundary!")
+    print("Consider GroupKFold or GroupShuffleSplit if evaluating generalization to unseen entities.")
+else:
+    print("Group isolation verified: 0 entity overlap between train and test.")`
+    },
+    {
+      category: "Model Evaluation",
+      id: "recipe-target-permutation-test",
+      title: "Target Permutation Sanity Check (Permutation Test)",
+      desc: "Train evaluation pipeline with randomly shuffled target labels to detect hidden feature/split leakage.",
+      code: `import numpy as np
+from sklearn.metrics import accuracy_score
+from sklearn.base import clone
+
+# Leakage Diagnostic Test: Shuffle target labels randomly
+# With no genuine signal, pipeline score should collapse to chance baseline
+y_shuffled = np.random.permutation(y_train)
+
+# Fit identical pipeline on shuffled labels
+shuffled_pipeline = clone(model_pipeline)
+shuffled_pipeline.fit(X_train, y_shuffled)
+
+# Evaluate on test set
+shuffled_preds = shuffled_pipeline.predict(X_test)
+shuffled_score = accuracy_score(y_test, shuffled_preds)
+
+print(f"Shuffled Target Test Score: {shuffled_score:.4f}")
+print("Expected behavior: Score should drop to chance baseline (e.g. ~0.50 for binary).")
+if shuffled_score > 0.70:
+    print("CRITICAL WARNING: Score remains high despite shuffled labels! Investigate severe feature or split leakage.")`
+    },
+    {
+      category: "Data Preprocessing",
+      id: "recipe-time-series-leakage-shift",
+      title: "Time-Series Rolling Feature with .shift(1)",
+      desc: "Engineer rolling temporal features using shift(1) to avoid current-row target contamination.",
+      code: `# Leakage-Safe Time Series Feature Engineering
+# DANGEROUS: df["rolling_mean"] = df["sales"].rolling(window=7).mean()  (includes current row's sales!)
+# SAFE: Shift by 1 ensures rolling average uses only strictly historical records
+
+df = df.sort_values(by="timestamp").reset_index(drop=True)
+df["rolling_mean_7"] = df["sales"].shift(1).rolling(window=7).mean()
+df["lag_1"] = df["sales"].shift(1)
+df["lag_7"] = df["sales"].shift(7)
+
+print("Engineered lag and rolling features without target peeking:")
+print(df[["timestamp", "sales", "lag_1", "rolling_mean_7"]].head(10))`
     },
 
     // Unsupervised Learning & Dimensionality Reduction Recipes

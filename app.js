@@ -63,7 +63,27 @@ const ITEM_TO_RECIPES = {
   "prep-21": ["recipe-save-joblib-pipeline"],
   "prep-22": ["recipe-production-logging"],
   "prep-23": ["recipe-missing-report", "recipe-schema-validation"],
-  "prep-24": ["recipe-save-joblib-pipeline", "recipe-production-logging"]
+  "prep-24": ["recipe-save-joblib-pipeline", "recipe-production-logging"],
+
+  // Leakage 18 audit mappings
+  "leak-1": ["recipe-linear-regression-train"],
+  "leak-2": ["recipe-group-overlap-audit"],
+  "leak-3": ["recipe-duplicate-check"],
+  "leak-4": ["recipe-time-series-leakage-shift"],
+  "leak-5": ["recipe-standard-scaler", "recipe-pipeline-production-mixed"],
+  "leak-6": ["recipe-one-hot-encoding", "recipe-col-transformer"],
+  "leak-7": ["recipe-invalid-bounds-check"],
+  "leak-8": ["recipe-pipeline-production-mixed"],
+  "leak-9": ["recipe-time-series-leakage-shift"],
+  "leak-10": ["recipe-schema-validation"],
+  "leak-11": ["recipe-corr-target", "recipe-multicollinearity-drop"],
+  "leak-12": ["recipe-time-series-leakage-shift"],
+  "leak-13": ["recipe-multicollinearity-drop"],
+  "leak-14": ["recipe-pipeline-production-mixed"],
+  "leak-15": ["recipe-linear-regression-train"],
+  "leak-16": ["recipe-target-permutation-test", "recipe-classification-eval"],
+  "leak-17": ["recipe-target-permutation-test"],
+  "leak-18": ["recipe-save-joblib-pipeline"]
 };
 
 class MLChecklistApp {
@@ -196,12 +216,20 @@ class MLChecklistApp {
       });
     }
 
+    let leakDone = 0;
+    if (ML_WORKFLOW_DATA.leakageTracker) {
+      ML_WORKFLOW_DATA.leakageTracker.forEach(item => {
+        if (p.checkedItems[item.id]?.status === "done") leakDone++;
+      });
+    }
+
     const masterTotal = ML_WORKFLOW_DATA.masterTracker.length;
     const edaTotal = ML_WORKFLOW_DATA.edaTracker.length;
     const prepTotal = ML_WORKFLOW_DATA.preprocessingTracker ? ML_WORKFLOW_DATA.preprocessingTracker.length : 24;
+    const leakTotal = ML_WORKFLOW_DATA.leakageTracker ? ML_WORKFLOW_DATA.leakageTracker.length : 18;
     const percent = Math.round((masterDone / masterTotal) * 100);
 
-    return { masterDone, masterTotal, percent, edaDone, edaTotal, prepDone, prepTotal };
+    return { masterDone, masterTotal, percent, edaDone, edaTotal, prepDone, prepTotal, leakDone, leakTotal };
   }
 
   updateProgressDisplays() {
@@ -227,6 +255,13 @@ class MLChecklistApp {
 
     const prepFillBar = document.getElementById("prep-line-fill");
     if (prepFillBar) prepFillBar.style.width = `${Math.round((stats.prepDone / stats.prepTotal) * 100)}%`;
+
+    // Update leak progress if on leakage tab
+    const leakPctDisplay = document.getElementById("leak-percent-display");
+    if (leakPctDisplay) leakPctDisplay.textContent = `${stats.leakDone}/${stats.leakTotal}`;
+
+    const leakFillBar = document.getElementById("leak-line-fill");
+    if (leakFillBar) leakFillBar.style.width = `${Math.round((stats.leakDone / stats.leakTotal) * 100)}%`;
   }
 
   updateItemDOM(itemId, isChecked) {
@@ -259,6 +294,9 @@ class MLChecklistApp {
         break;
       case "preprocessing":
         this.renderPreprocessingView(container);
+        break;
+      case "leakage":
+        this.renderLeakageView(container);
         break;
       case "plots":
         this.renderPlotGuideView(container);
@@ -786,6 +824,262 @@ class MLChecklistApp {
   }
 
   // ==========================================================================
+  // LEAKAGE AUDIT VIEW: 18-STEP AUDIT & LEAKAGE DETECTION GUIDE
+  // ==========================================================================
+  renderLeakageView(container) {
+    const stats = this.getStats();
+    const guide = ML_WORKFLOW_DATA.leakageGuide || {};
+
+    // Group Leakage items by category (4 audit categories)
+    const categories = {};
+    (ML_WORKFLOW_DATA.leakageTracker || []).forEach(item => {
+      if (!categories[item.category]) categories[item.category] = [];
+      categories[item.category].push(item);
+    });
+
+    container.innerHTML = `
+      <h1 class="page-title">Data Leakage in Preprocessing: Detection & Audit Guide</h1>
+      <p class="page-subtitle">How data leakage happens, how to detect it, and an 18-step pre-deployment audit checklist to guarantee reproducible model generalization in production.</p>
+
+      <!-- Quick Jump / Action Bar -->
+      <div style="margin-bottom: 22px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+        <a href="#leak-audit-card" class="btn-minimal" style="color: #fff; border-color: #333;">Audit Checklist (0/18)</a>
+        <a href="#leak-scaling-card" class="btn-minimal">Wrong vs Right Scaling</a>
+        <a href="#leak-sources-card" class="btn-minimal">12 Leakage Sources</a>
+        <a href="#leak-target-card" class="btn-minimal">Target Leakage</a>
+        <a href="#leak-timeseries-card" class="btn-minimal">Time-Series & Groups</a>
+        <a href="#leak-tests-card" class="btn-minimal">3 Diagnostic Tests</a>
+        <a href="#leak-warnings-card" class="btn-minimal">Warning Signs</a>
+      </div>
+
+      <!-- Core Principle Alert -->
+      <div style="margin-bottom: 24px; padding: 14px 18px; background: #0a0a0a; border: 1px solid #222; border-left: 3px solid #fff; border-radius: var(--radius-md);">
+        <div style="font-size: 0.88rem; font-weight: 600; color: #fff;">What is Data Leakage?</div>
+        <div style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.5;">
+          Data leakage happens when an ML model gets access to information during training that would not legitimately be available when making a real prediction. It makes a model appear highly accurate during testing (e.g. 99% test score) but fail catastrophically after deployment.
+        </div>
+      </div>
+
+      <!-- 18-Step Leakage Audit Tracker Card -->
+      <div class="checklist-card" id="leak-audit-card">
+        <div class="card-header-row">
+          <div>
+            <div class="card-title-text">Leakage audit checklist</div>
+            <div class="card-instructions">Execute this pre-deployment audit after training your model but before releasing it.</div>
+          </div>
+          <div class="progress-percent-text" id="leak-percent-display">${stats.leakDone}/${stats.leakTotal}</div>
+        </div>
+
+        <div class="progress-line-track">
+          <div class="progress-line-fill" id="leak-line-fill" style="width: ${Math.round((stats.leakDone / stats.leakTotal) * 100)}%;"></div>
+        </div>
+
+        ${Object.keys(categories).map(cat => `
+          <div class="section-group">
+            <div class="group-heading">${cat}</div>
+            <div class="group-items">
+              ${categories[cat].map(item => this.renderCheckRowHTML(item.id, item.name, item.desc)).join("")}
+            </div>
+          </div>
+        `).join("")}
+
+        <div class="card-bottom-actions">
+          <button class="text-action-btn" onclick="app.resetLeakageChecklist()">Reset</button>
+          <button class="text-action-btn" onclick="app.copyLeakageMarkdown()">Copy audit checklist</button>
+        </div>
+      </div>
+
+      <!-- Section 1: How Preprocessing Causes Leakage (Scaling Example) -->
+      <div class="checklist-card" id="leak-scaling-card" style="margin-top: 24px;">
+        <div class="card-title-text" style="margin-bottom: 8px;">1. How Preprocessing Causes Data Leakage: The Scaling Example</div>
+        <p style="font-size: 0.84rem; color: var(--text-secondary); line-height: 1.5; margin-bottom: 14px;">
+          Suppose a dataset contains <code>[10, 20, 30, 40, 1000]</code>, and <code>1000</code> belongs to the test set. If you calculate mean and std on all five values before splitting, training data's scaled values depend on test data.
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 16px;">
+          <div style="background: #080808; border: 1px solid #222; border-radius: 6px; padding: 14px;">
+            <div style="color: #ff5555; font-size: 0.85rem; font-weight: 700; margin-bottom: 6px;">✕ INCORRECT (Data Leakage)</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 8px;">
+              Fit scaler on complete dataset → Split into train & test.<br>
+              <em>The scaler has already learned test set distribution statistics.</em>
+            </div>
+            <div class="code-box">
+              <pre><code># LEAKAGE: Learns statistics from all data
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+X_train, X_test, y_train, y_test = train_test_split(
+    X_scaled, y, test_size=0.2, random_state=42
+)</code></pre>
+            </div>
+          </div>
+
+          <div style="background: #080808; border: 1px solid #222; border-radius: 6px; padding: 14px;">
+            <div style="color: #55ff55; font-size: 0.85rem; font-weight: 700; margin-bottom: 6px;">✓ CORRECT (Leakage-Free)</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 8px;">
+              Split into train & test → Fit scaler on train only → Transform test without refitting.<br>
+              <em>Test set is transformed without influencing training statistics.</em>
+            </div>
+            <div class="code-box">
+              <pre><code># LEAK-FREE: Fit only on training fold
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)</code></pre>
+            </div>
+          </div>
+        </div>
+        <div style="font-size: 0.81rem; color: var(--text-secondary); line-height: 1.4;">
+          <strong>Notice the rule:</strong> <code>fit_transform()</code> is used on training data, while <code>transform()</code> is used on test/validation data. The exact same rule applies to imputers, encoders, feature selectors, outlier bounds, and PCA components.
+        </div>
+      </div>
+
+      <!-- Section 2: 12 Common Leakage Sources Audit Table -->
+      <div class="checklist-card" id="leak-sources-card" style="margin-top: 24px;">
+        <div class="card-title-text" style="margin-bottom: 6px;">2. Common Leakage Sources in Preprocessing (Audit Table)</div>
+        <p style="font-size: 0.84rem; color: var(--text-secondary); margin-bottom: 14px;">
+          Use this table as a pre-release audit checklist when reviewing your pipeline code.
+        </p>
+
+        <div class="minimal-table-container">
+          <table class="minimal-table">
+            <thead>
+              <tr>
+                <th style="width: 25%;">Leakage Source</th>
+                <th style="width: 45%;">How It Happens</th>
+                <th style="width: 30%;">How to Prevent It</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(guide.sourcesTable || []).map(row => `
+                <tr>
+                  <td><strong style="color: #fff;">${escapeHtml(row.source)}</strong></td>
+                  <td style="color: #ddd;">${escapeHtml(row.how)}</td>
+                  <td style="color: #aaa; font-size: 0.8rem;">${escapeHtml(row.prevent)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 3: Target Leakage (The More Dangerous Case) -->
+      <div class="checklist-card" id="leak-target-card" style="margin-top: 24px;">
+        <div class="card-title-text" style="margin-bottom: 6px;">3. Target Leakage: The More Dangerous Case</div>
+        <p style="font-size: 0.84rem; color: var(--text-secondary); line-height: 1.5; margin-bottom: 12px;">
+          Target leakage occurs when a feature contains information about the answer that would not be available at prediction time. For example, in customer churn prediction:
+        </p>
+        <div style="background: #080808; border: 1px solid var(--border-card); padding: 12px 14px; border-radius: var(--radius-sm); font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.5;">
+          • Legitimate predictors: <code>tenure</code>, <code>plan_type</code>, <code>monthly_charge</code>, <code>prior_support_calls</code>.<br>
+          • <strong>Target leakage columns:</strong> <code>cancellation_date</code>, <code>account_closed_status</code>, <code>refund_amount</code> (recorded downstream after customer cancels).<br>
+          The model scores 99% in evaluation because it reads the answer directly, but fails completely on active customers.
+        </div>
+
+        <div style="font-size: 0.86rem; font-weight: 600; color: #fff; margin-bottom: 8px;">5 Questions to Ask for Every Feature:</div>
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px;">
+          ${(guide.targetQuestions || []).map((q, i) => `
+            <div style="font-size: 0.82rem; color: #ddd; padding: 6px 10px; background: #080808; border: 1px solid #1a1a1a; border-radius: 4px;">
+              <span style="font-family: var(--font-mono); color: #fff; font-weight: 700;">Q${i+1}.</span> ${escapeHtml(q)}
+            </div>
+          `).join("")}
+        </div>
+        <div style="font-size: 0.82rem; color: var(--text-muted);">
+          <strong>Production Rule:</strong> Define an explicit prediction cutoff timestamp and assert that every feature uses only information recorded before that cutoff.
+        </div>
+      </div>
+
+      <!-- Section 4: Time-Series & Group Leakage Guard -->
+      <div class="checklist-card" id="leak-timeseries-card" style="margin-top: 24px;">
+        <div class="card-title-text" style="margin-bottom: 6px;">4. Time-Series & Grouped Entity Leakage</div>
+        
+        <strong style="color: #fff; display: block; margin-top: 10px;">Time-Series Rolling Window Leakage</strong>
+        <p style="color: var(--text-secondary); font-size: 0.82rem; margin: 4px 0 8px 0;">
+          A rolling window without <code>.shift(1)</code> includes the current row's target value in the predictor:
+        </p>
+        ${this.getRecipeBoxHTML("recipe-time-series-leakage-shift")}
+
+        <strong style="color: #fff; display: block; margin-top: 18px;">Duplicate Records & Group Overlap Audit</strong>
+        <p style="color: var(--text-secondary); font-size: 0.82rem; margin: 4px 0 8px 0;">
+          Verify that records from the same customer, patient, or device never appear in both train and test partitions:
+        </p>
+        ${this.getRecipeBoxHTML("recipe-group-overlap-audit")}
+      </div>
+
+      <!-- Section 5: 3 Pre-Deployment Diagnostic Tests -->
+      <div class="checklist-card" id="leak-tests-card" style="margin-top: 24px;">
+        <div class="card-title-text" style="margin-bottom: 6px;">5. Pre-Deployment Leakage Diagnostic Tests</div>
+        <p style="font-size: 0.84rem; color: var(--text-secondary); margin-bottom: 14px;">
+          Execute these 3 diagnostic tests to catch silent leakage before production release:
+        </p>
+
+        <!-- Test 1 -->
+        <div style="background: #080808; border: 1px solid var(--border-card); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 12px;">
+          <div style="font-size: 0.88rem; font-weight: 600; color: #fff;">Test 1 — Check for Suspiciously Powerful Individual Features</div>
+          <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">
+            Inspect correlations and Mutual Information between individual predictors and the target. A single feature that predicts the target almost perfectly (>0.95 AUC on its own) is almost always a target proxy, post-event artifact, or leaked ID.
+          </div>
+        </div>
+
+        <!-- Test 2 -->
+        <div style="background: #080808; border: 1px solid var(--border-card); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 12px;">
+          <div style="font-size: 0.88rem; font-weight: 600; color: #fff;">Test 2 — Target Permutation Sanity Check (Shuffle Test)</div>
+          <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">
+            Train the exact pipeline on randomly permuted target labels. If test accuracy remains high instead of dropping to chance (e.g. 50%), your feature engineering or splitting has severe leakage.
+          </div>
+          ${this.getRecipeBoxHTML("recipe-target-permutation-test")}
+        </div>
+
+        <!-- Test 3 -->
+        <div style="background: #080808; border: 1px solid var(--border-card); border-radius: var(--radius-sm); padding: 12px 14px;">
+          <div style="font-size: 0.88rem; font-weight: 600; color: #fff;">Test 3 — Reproduce the Real Prediction Process</div>
+          <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">
+            Take a mock production payload containing only permitted input fields (no target, no future timestamps). Pass it through the serialized pipeline to confirm it generates expected predictions cleanly.
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 6: Warning Signs Table -->
+      <div class="checklist-card" id="leak-warnings-card" style="margin-top: 24px;">
+        <div class="card-title-text" style="margin-bottom: 6px;">6. What Are the Warning Signs? (6 Red Flags)</div>
+        <p style="font-size: 0.84rem; color: var(--text-secondary); margin-bottom: 14px;">
+          None of these signals automatically proves leakage; they tell you exactly where to investigate.
+        </p>
+
+        <div class="minimal-table-container">
+          <table class="minimal-table">
+            <thead>
+              <tr>
+                <th style="width: 45%;">Warning Sign</th>
+                <th style="width: 55%;">What to Investigate</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(guide.warningSigns || []).map(row => `
+                <tr>
+                  <td><strong style="color: #ff6b6b;">${escapeHtml(row.sign)}</strong></td>
+                  <td style="color: #ddd;">${escapeHtml(row.investigate)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 7: The Golden Rule to Remember -->
+      <div class="checklist-card" style="margin-top: 24px; border-color: #333;">
+        <div class="card-title-text" style="margin-bottom: 8px;">The Rule to Remember</div>
+        <div style="font-size: 1rem; font-weight: 700; color: #fff; font-family: var(--font-mono); line-height: 1.5; margin-bottom: 10px;">
+          ${escapeHtml(guide.goldenRule || "Split correctly → fit transformations on training data only → evaluate complete pipeline on held-out data → audit every feature's availability time → reproduce inference before deployment.")}
+        </div>
+        <p style="font-size: 0.84rem; color: var(--text-secondary); line-height: 1.5;">
+          Using a fitted scikit-learn <code>ColumnTransformer</code> and <code>Pipeline</code> is the best structural defense. Combine it with rigorous tests for duplicate entities, chronological cutoffs, and group independence.
+        </p>
+      </div>
+    `;
+  }
+
+  // ==========================================================================
   // PLOT INTERPRETATION GUIDE VIEW (HOW TO INTERPRET PLOTS DURING EDA)
   // ==========================================================================
   renderPlotGuideView(container) {
@@ -1177,8 +1471,18 @@ class MLChecklistApp {
           <strong>Leakage rule:</strong> Imputers, scalers, encoders, feature selectors, and other learned transformations must be fitted only on training data within each training fold. Validation and test data receive transformations from the fitted training pipeline.
         </div>
 
+        <div style="margin: 10px 0 14px 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <button class="btn-minimal" onclick="app.switchTab('leakage')" style="color: #fff; border-color: #555;">Open Leakage Audit (0/18 Tracker & Guide) →</button>
+        </div>
+
         <strong style="color: #fff; display: block; margin-top: 16px;">Train/Test Splitting Code</strong>
         ${this.getRecipeBoxHTML("recipe-linear-regression-train")}
+
+        <strong style="color: #fff; display: block; margin-top: 16px;">Entity Group Overlap Audit</strong>
+        ${this.getRecipeBoxHTML("recipe-group-overlap-audit")}
+
+        <strong style="color: #fff; display: block; margin-top: 16px;">Leakage-Safe Time Series Lag & Shift</strong>
+        ${this.getRecipeBoxHTML("recipe-time-series-leakage-shift")}
       </div>
 
       <!-- Phase 4 -->
@@ -1973,6 +2277,50 @@ model_pipeline.fit(X_train, y_train)`;
     });
   }
 
+  resetLeakageChecklist() {
+    if (!confirm("Reset Leakage Audit items for the current dataset?")) return;
+    const p = this.getActiveProject();
+    if (p && p.checkedItems && ML_WORKFLOW_DATA.leakageTracker) {
+      ML_WORKFLOW_DATA.leakageTracker.forEach(item => {
+        delete p.checkedItems[item.id];
+      });
+      this.saveState();
+      this.renderActiveTab();
+      this.showToast("Leakage audit reset");
+    }
+  }
+
+  copyLeakageMarkdown() {
+    const p = this.getActiveProject();
+    const stats = this.getStats();
+    const checked = p.checkedItems || {};
+    let md = `# Leakage Audit: ${p.name}\n\n`;
+    md += `**Status:** ${stats.leakDone}/${stats.leakTotal} verified\n\n`;
+
+    const categories = {};
+    (ML_WORKFLOW_DATA.leakageTracker || []).forEach(item => {
+      if (!categories[item.category]) categories[item.category] = [];
+      categories[item.category].push(item);
+    });
+
+    Object.keys(categories).forEach(cat => {
+      md += `### ${cat}\n`;
+      categories[cat].forEach(item => {
+        const isDone = checked[item.id]?.status === "done";
+        const note = checked[item.id]?.note;
+        md += `${isDone ? '[x]' : '[ ]'} **${item.name}**: ${item.desc}\n`;
+        if (note) md += `    > Note: ${note}\n`;
+      });
+      md += `\n`;
+    });
+
+    navigator.clipboard.writeText(md).then(() => {
+      this.showToast("Leakage audit copied!");
+    }).catch(() => {
+      this.showToast("Failed to copy");
+    });
+  }
+
   buildMarkdownReport() {
     const p = this.getActiveProject();
     const stats = this.getStats();
@@ -1982,6 +2330,7 @@ model_pipeline.fit(X_train, y_train)`;
     md += `**Master Progress:** ${stats.percent}% (${stats.masterDone}/${stats.masterTotal} tasks verified)\n`;
     md += `**EDA Tracker:** ${stats.edaDone}/${stats.edaTotal} verified\n`;
     md += `**Preprocessing Sign-Off:** ${stats.prepDone}/${stats.prepTotal} verified\n`;
+    md += `**Leakage Audit:** ${stats.leakDone}/${stats.leakTotal} verified\n`;
     if (p.targetCol) md += `**Target Variable:** ${p.targetCol}\n`;
     if (p.taskType) md += `**Task Type:** ${p.taskType}\n`;
     md += `\n`;
@@ -2006,6 +2355,17 @@ model_pipeline.fit(X_train, y_train)`;
     if (ML_WORKFLOW_DATA.preprocessingTracker) {
       md += `### Preprocessing Sign-Off (0/24)\n`;
       ML_WORKFLOW_DATA.preprocessingTracker.forEach(item => {
+        const isDone = checked[item.id]?.status === "done";
+        const note = checked[item.id]?.note;
+        md += `${isDone ? '[x]' : '[ ]'} **${item.name}** (${item.category})\n`;
+        if (note) md += `    > Note: ${note}\n`;
+      });
+      md += `\n`;
+    }
+
+    if (ML_WORKFLOW_DATA.leakageTracker) {
+      md += `### Leakage Audit (0/18)\n`;
+      ML_WORKFLOW_DATA.leakageTracker.forEach(item => {
         const isDone = checked[item.id]?.status === "done";
         const note = checked[item.id]?.note;
         md += `${isDone ? '[x]' : '[ ]'} **${item.name}** (${item.category})\n`;

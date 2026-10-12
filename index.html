@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Production ML Workflow: Complete Checklist</title>
+  <meta name="description" content="Production-grade Machine Learning workflow checklist. A reproducible, leakage-free, tested, deployable, and maintainable ML pipeline system.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✔</text></svg>">
+</head>
+<body>
+
+  <!-- Top Sticky Navigation Bar -->
+  <header id="top-nav">
+    <div class="nav-left">
+      <a href="#" class="nav-brand" onclick="app.switchTab('master'); return false;">
+        <span>ML Workflow OS</span>
+      </a>
+      <div class="nav-tabs">
+        <button class="nav-tab-btn active" data-tab="master" onclick="app.switchTab('master')">Complete Checklist</button>
+        <button class="nav-tab-btn" data-tab="eda" onclick="app.switchTab('eda')">EDA 31-Step Tracker</button>
+        <button class="nav-tab-btn" data-tab="preprocessing" onclick="app.switchTab('preprocessing')">Preprocessing (0/24)</button>
+        <button class="nav-tab-btn" data-tab="plots" onclick="app.switchTab('plots')">Plot Guide</button>
+        <button class="nav-tab-btn" data-tab="recipes" onclick="app.switchTab('recipes')">Code Recipes</button>
+        <button class="nav-tab-btn" data-tab="phases" onclick="app.switchTab('phases')">Phase Guides (1–9)</button>
+        <button class="nav-tab-btn" data-tab="tools" onclick="app.switchTab('tools')">Interactive Tools</button>
+      </div>
+    </div>
+
+    <div class="nav-right">
+      <select id="dataset-select" class="dataset-select" onchange="app.handleDatasetChange(this.value)">
+        <!-- Options rendered dynamically -->
+      </select>
+      <button class="btn-minimal" onclick="app.openNewDatasetModal()" title="Add New Dataset Profile">+ Dataset</button>
+      <button class="btn-minimal" onclick="app.openReportModal()" title="View Markdown Report">Report</button>
+      <button class="btn-minimal" onclick="app.exportJSON()" title="Backup to JSON">Export</button>
+      <button class="btn-minimal" onclick="document.getElementById('file-import-input').click()" title="Restore from JSON">Import</button>
+      <input type="file" id="file-import-input" accept=".json" style="display: none;" onchange="app.handleFileImport(event)">
+    </div>
+  </header>
+
+  <!-- Main Application Container -->
+  <main class="app-wrapper" id="main-content">
+    <!-- View rendered dynamically by app.js -->
+  </main>
+
+  <!-- Modal Dialog: New / Edit Dataset -->
+  <div class="modal-overlay" id="dataset-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="dataset-modal-title">Dataset Profile</h3>
+        <button class="modal-close" onclick="app.closeModal('dataset-modal')">&times;</button>
+      </div>
+      <input type="hidden" id="ds-modal-id">
+      <div class="form-field">
+        <label>Dataset / Project Name</label>
+        <input type="text" id="ds-modal-name" placeholder="e.g. Customer Churn Prediction 2026">
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div class="form-field">
+          <label>ML Task Type</label>
+          <select id="ds-modal-type">
+            <option value="Binary Classification">Binary Classification</option>
+            <option value="Multiclass Classification">Multiclass Classification</option>
+            <option value="Regression">Regression</option>
+            <option value="Time Series Forecasting">Time Series Forecasting</option>
+            <option value="Clustering">Clustering</option>
+            <option value="Ranking">Ranking</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Target Column</label>
+          <input type="text" id="ds-modal-target" placeholder="e.g. churn_label">
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div class="form-field">
+          <label>Row Count</label>
+          <input type="text" id="ds-modal-rows" placeholder="e.g. 50,000">
+        </div>
+        <div class="form-field">
+          <label>Column Count</label>
+          <input type="text" id="ds-modal-cols" placeholder="e.g. 32">
+        </div>
+      </div>
+      <div class="form-field">
+        <label>Notes / Objectives</label>
+        <textarea id="ds-modal-desc" rows="3" placeholder="Dataset source, business goal, SLA..."></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+        <button class="btn-minimal" onclick="app.closeModal('dataset-modal')">Cancel</button>
+        <button class="btn-minimal" style="color: #fff; border-color: #555;" onclick="app.saveDatasetModal()">Save Profile</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Dialog: Markdown Audit Report -->
+  <div class="modal-overlay" id="report-modal">
+    <div class="modal-card" style="max-width: 720px;">
+      <div class="modal-header">
+        <h3>Audit Report Preview</h3>
+        <button class="modal-close" onclick="app.closeModal('report-modal')">&times;</button>
+      </div>
+      <pre id="report-modal-text" style="background: #0a0a0a; border: 1px solid #1f1f1f; padding: 16px; border-radius: 6px; font-family: var(--font-mono); font-size: 0.78rem; max-height: 440px; overflow-y: auto; white-space: pre-wrap; color: #ddd;"></pre>
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
+        <button class="btn-minimal" onclick="app.copyMarkdownChecklist()">Copy Markdown</button>
+        <button class="btn-minimal" style="color: #fff; border-color: #555;" onclick="app.downloadMarkdownReport()">Download .md</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Box -->
+  <div id="toast-box"></div>
+
+  <!-- Application Logic -->
+  <script src="checklist-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
